@@ -19,8 +19,9 @@ from plugins import *
 from config import conf
 
 CHAT_API_URL = "https://api.siliconflow.cn/v1/chat/completions"
-CHAT_MODEL = "deepseek-ai/DeepSeek-V2-Chat"
+CHAT_MODEL = "Qwen/Qwen2-7B-Instruct"
 ENHANCER_PROMPT = """As a Stable Diffusion Prompt expert, you will create prompts from keywords, often from databases like Danbooru. Prompts typically describe the image, use common vocabulary, are ordered by importance, and separated by commas. Avoid using "-" or ".", but spaces and natural language are acceptable. Avoid word repetition. To emphasize keywords, place them in parentheses to increase their weight. For example, "(flowers)" increases 'flowers' weight by 1.1x, while "(((flowers)))" increases it by 1.331x. Use "(flowers:1.5)" to increase 'flowers' weight by 1.5x. Only increase weights for important tags. Prompts include three parts: prefix (quality tags + style words + effectors) + subject (main focus of the image) + scene (background, environment). The prefix affects image quality. Tags like "masterpiece", "best quality" increase image detail. Style words like "illustration", "lensflare" define the image style. Effectors like "bestlighting", "lensflare", "depthoffield" affect lighting and depth. The subject is the main focus, like characters or scenes. Detailed subject description ensures rich, detailed images. Increase subject weight for clarity. For characters, describe facial, hair, body, clothing, pose features. The scene describes the environment. Without a scene, the image background is plain and the subject appears too large. Some subjects inherently include scenes (e.g., buildings, landscapes). Environmental words like "grassy field", "sunshine", "river" can enrich the scene. Your task is to design image generation prompts. Please follow these steps: 1. I will send you an image scene. You need to generate a detailed image description. 2. The image description must be in English, output as a Positive Prompt."""
+ENHANCER_PROMPT_FLUX = """As a Flux Natural Language Processing Expert, your task is to enhance the following text by making it more descriptive and vivid using natural language techniques. Ensure that the enhanced text maintains the original meaning while improving its clarity, coherence, and overall descriptiveness."""
 
 @plugins.register(
     name="Siliconflow2cow",
@@ -96,7 +97,7 @@ class Siliconflow2cow(Plugin):
                 original_image_url = self.extract_image_url(clean_prompt)
                 logger.debug(f"[Siliconflow2cow] 原始提示词中提取的图片URL: {original_image_url}")
 
-                enhanced_prompt = self.enhance_prompt(clean_prompt)
+                enhanced_prompt = self.enhance_prompt(clean_prompt, model_key)
                 logger.debug(f"[Siliconflow2cow] 增强后的提示词: {enhanced_prompt}")
 
                 image_url = self.generate_image(enhanced_prompt, original_image_url, model_key, image_size)
@@ -128,9 +129,67 @@ class Siliconflow2cow(Plugin):
         logger.debug(f"[Siliconflow2cow] 解析用户输入: 模型={model_key}, 尺寸={image_size}, 清理后的提示词={clean_prompt}")
         return model_key, image_size, clean_prompt
 
-    def enhance_prompt(self, prompt: str) -> str:
+
+    def translate_prompt(self, prompt: str) -> str:
+        """统一的翻译功能，将提示词翻译成英文"""
         try:
-            logger.debug(f"[Siliconflow2cow] 正在增强提示词: {prompt}")
+            logger.debug(f"[Siliconflow2cow] 正在翻译提示词: {prompt}")
+            translate_response = requests.post(
+                CHAT_API_URL,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.auth_token}"
+                },
+                json={
+                    "model": CHAT_MODEL,
+                    "messages": [
+                        {"role": "system", "content": "Translate the following prompt into English:"},
+                        {"role": "user", "content": prompt}
+                    ]
+                }
+            )
+            translate_response.raise_for_status()
+            translated_prompt = translate_response.json()['choices'][0]['message']['content']
+            logger.debug(f"[Siliconflow2cow] 翻译后的提示词: {translated_prompt}")
+            return translated_prompt
+        except Exception as e:
+            logger.error(f"[Siliconflow2cow] 提示词翻译失败: {e}")
+            return prompt  # 如果翻译失败，返回原始提示词
+
+    def enhance_prompt(self, prompt: str, model_key: str) -> str:
+        """根据模型选择合适的提示词增强策略"""
+        # 先翻译提示词
+        translated_prompt = self.translate_prompt(prompt)
+        
+        # 根据模型选择使用的增强策略
+        if model_key in ["dev", "flux"]:
+            try:
+                logger.debug(f"[Siliconflow2cow] 模型 {model_key} 使用 ENHANCER_PROMPT_FLUX 进行自然语言增强。")
+                response = requests.post(
+                    CHAT_API_URL,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.auth_token}"
+                    },
+                    json={
+                        "model": CHAT_MODEL,
+                        "messages": [
+                            {"role": "system", "content": ENHANCER_PROMPT_FLUX},
+                            {"role": "user", "content": translated_prompt}
+                        ]
+                    }
+                )
+                response.raise_for_status()
+                enhanced_prompt = response.json()['choices'][0]['message']['content']
+                logger.debug(f"[Siliconflow2cow] 使用 ENHANCER_PROMPT_FLUX 增强后的提示词: {enhanced_prompt}")
+                return enhanced_prompt
+            except Exception as e:
+                logger.error(f"[Siliconflow2cow] 自然语言增强失败: {e}")
+                return translated_prompt  # 如果增强失败，返回翻译后的提示词
+        
+        # 使用默认的 ENHANCER_PROMPT 进行提示词增强
+        try:
+            logger.debug(f"[Siliconflow2cow] 正在使用 ENHANCER_PROMPT 进行提示词增强: {translated_prompt}")
             response = requests.post(
                 CHAT_API_URL,
                 headers={
@@ -141,17 +200,22 @@ class Siliconflow2cow(Plugin):
                     "model": CHAT_MODEL,
                     "messages": [
                         {"role": "system", "content": ENHANCER_PROMPT},
-                        {"role": "user", "content": prompt}
+                        {"role": "user", "content": translated_prompt}
                     ]
                 }
             )
             response.raise_for_status()
             enhanced_prompt = response.json()['choices'][0]['message']['content']
-            logger.debug(f"[Siliconflow2cow] 增强后的提示词: {enhanced_prompt}")
+            logger.debug(f"[Siliconflow2cow] 使用 ENHANCER_PROMPT 增强后的提示词: {enhanced_prompt}")
             return enhanced_prompt
+            
         except Exception as e:
-            logger.error(f"[Siliconflow2cow] 增强提示词失败: {e}")
-            return prompt
+            logger.error(f"[Siliconflow2cow] 提示词增强失败: {e}")
+            return translated_prompt  # 如果增强失败，返回翻译后的提示词
+
+
+
+
 
     def generate_image(self, prompt: str, original_image_url: str, model_key: str, image_size: str) -> str:
         if original_image_url:
@@ -178,8 +242,16 @@ class Siliconflow2cow(Plugin):
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         }
+        
+        # 只有 fluxdev 需要单独传递 model 字段
+        if model_key == "dev":
+            json_body["model"] = "black-forest-labs/FLUX.1-dev"
+            json_body.update({
+                "num_inference_steps": 30,
+                "guidance_scale": 7.0
+            })
 
-        if model_key == "flux":
+        elif model_key == "schnell":
             json_body.update({
                 "num_inference_steps": 30,
                 "guidance_scale": 7.0
@@ -231,6 +303,9 @@ class Siliconflow2cow(Plugin):
                     logger.error(f"[Siliconflow2cow] API错误信息: {error_message}")
                 logger.error(f"[Siliconflow2cow] API响应内容: {e.response.text}")
             raise Exception(f"API请求失败: {str(e)}")
+        
+            logger.debug(f"[Siliconflow2cow] 发送请求体: {json_body}")
+            
 
     def generate_image_by_img(self, prompt: str, image_url: str, model_key: str, image_size: str) -> str:
         url = self.get_img_url_for_model(model_key)
@@ -248,7 +323,7 @@ class Siliconflow2cow(Plugin):
             "height": height,
             "batch_size": 1
         }
-
+        
         if model_key == "sdxl":
             json_body.update({
                 "num_inference_steps": 40,
@@ -303,7 +378,7 @@ class Siliconflow2cow(Plugin):
 
     def extract_model_key(self, prompt: str) -> str:
         match = re.search(r'-m ?(\S+)', prompt)
-        model_key = match.group(1).strip() if match else "flux"
+        model_key = match.group(1).strip() if match else "dev"
         logger.debug(f"[Siliconflow2cow] 提取的模型键: {model_key}")
         return model_key
 
@@ -345,7 +420,8 @@ class Siliconflow2cow(Plugin):
 
     def get_url_for_model(self, model_key: str) -> str:
         URL_MAP = {
-            "flux": "https://api.siliconflow.cn/v1/black-forest-labs/FLUX.1-schnell/text-to-image",
+            "dev": "https://api.siliconflow.cn/v1/image/generations",
+            "schnell": "https://api.siliconflow.cn/v1/black-forest-labs/FLUX.1-schnell/text-to-image",
             "sd3": "https://api.siliconflow.cn/v1/stabilityai/stable-diffusion-3-medium/text-to-image",
             "sdxl": "https://api.siliconflow.cn/v1/stabilityai/stable-diffusion-xl-base-1.0/text-to-image",
             "sd2": "https://api.siliconflow.cn/v1/stabilityai/stable-diffusion-2-1/text-to-image",
@@ -353,7 +429,7 @@ class Siliconflow2cow(Plugin):
             "sdxlt": "https://api.siliconflow.cn/v1/stabilityai/sdxl-turbo/text-to-image",
             "sdxll": "https://api.siliconflow.cn/v1/ByteDance/SDXL-Lightning/text-to-image"
         }
-        url = URL_MAP.get(model_key, URL_MAP["flux"])
+        url = URL_MAP.get(model_key, URL_MAP["dev"])
         logger.debug(f"[Siliconflow2cow] 选择的模型URL: {url}")
         return url
 
@@ -438,10 +514,10 @@ class Siliconflow2cow(Plugin):
         help_text += "3. 使用 '---' 后跟比例来指定图片尺寸，例如：---16:9\n"
         help_text += "4. 如果要进行图生图，直接在提示词中包含图片URL\n"
         help_text += f"5. 输入 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
-        help_text += f"示例：{self.drawing_prefixes[0]} 一只可爱的小猫 -m flux ---16:9\n"
+        help_text += f"示例：{self.drawing_prefixes[0]} 一只可爱的小猫 -m dev ---16:9\n"
         help_text += "注意：您的提示词将会被AI自动优化以产生更好的结果。\n"
         help_text += "注意：各模型的参数已经过调整以提高图像质量。\n"
-        help_text += f"可用的模型：flux, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
+        help_text += f"可用的模型：dev,schnell, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
         help_text += f"可用的尺寸比例：{', '.join(self.RATIO_MAP.keys())}\n"
         help_text += f"图片将每{self.clean_interval}天自动清理一次。\n"
         return help_text
