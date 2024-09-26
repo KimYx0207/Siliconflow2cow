@@ -18,10 +18,6 @@ from common.log import logger
 from plugins import *
 from config import conf
 
-CHAT_API_URL = "https://api.siliconflow.cn/v1/chat/completions"
-CHAT_MODEL = "Qwen/Qwen2-7B-Instruct"
-ENHANCER_PROMPT = """As a Stable Diffusion Prompt expert, you will create prompts from keywords, often from databases like Danbooru. Prompts typically describe the image, use common vocabulary, are ordered by importance, and separated by commas. Avoid using "-" or ".", but spaces and natural language are acceptable. Avoid word repetition. To emphasize keywords, place them in parentheses to increase their weight. For example, "(flowers)" increases 'flowers' weight by 1.1x, while "(((flowers)))" increases it by 1.331x. Use "(flowers:1.5)" to increase 'flowers' weight by 1.5x. Only increase weights for important tags. Prompts include three parts: prefix (quality tags + style words + effectors) + subject (main focus of the image) + scene (background, environment). The prefix affects image quality. Tags like "masterpiece", "best quality" increase image detail. Style words like "illustration", "lensflare" define the image style. Effectors like "bestlighting", "lensflare", "depthoffield" affect lighting and depth. The subject is the main focus, like characters or scenes. Detailed subject description ensures rich, detailed images. Increase subject weight for clarity. For characters, describe facial, hair, body, clothing, pose features. The scene describes the environment. Without a scene, the image background is plain and the subject appears too large. Some subjects inherently include scenes (e.g., buildings, landscapes). Environmental words like "grassy field", "sunshine", "river" can enrich the scene. Your task is to design image generation prompts. Please follow these steps: 1. I will send you an image scene. You need to generate a detailed image description. 2. The image description must be in English, output as a Positive Prompt."""
-ENHANCER_PROMPT_FLUX = """As a Flux Natural Language Processing Expert, your task is to enhance the following text by making it more descriptive and vivid using natural language techniques. Ensure that the enhanced text maintains the original meaning while improving its clarity, coherence, and overall descriptiveness."""
 
 @plugins.register(
     name="Siliconflow2cow",
@@ -43,10 +39,24 @@ class Siliconflow2cow(Plugin):
             if not self.auth_token:
                 raise Exception("在配置中未找到认证令牌。")
 
+    
+            # 初始化其他参数
             self.drawing_prefixes = conf.get("drawing_prefixes", ["绘", "draw"])
             self.image_output_dir = conf.get("image_output_dir", "./plugins/siliconflow2cow/images")
-            self.clean_interval = float(conf.get("clean_interval", 3))  # 天数
-            self.clean_check_interval = int(conf.get("clean_check_interval", 3600))  # 秒数，默认1小时
+            self.clean_interval = float(conf.get("clean_interval", 3))
+            self.clean_check_interval = int(conf.get("clean_check_interval", 3600))
+            self.chat_api_url = conf.get("CHAT_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
+            self.chat_model = conf.get("CHAT_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+            self.enhancer_prompt = conf.get("ENHANCER_PROMPT", "")
+            self.enhancer_prompt_flux = conf.get("ENHANCER_PROMPT_FLUX", "")
+            self.default_drawing_model = conf.get("default_drawing_model", "schnell")
+            self.translate_api_url = conf.get("TRANSLATE_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
+            self.translate_model = conf.get("TRANSLATE_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+            self.dev_model_usage_limit = int(conf.get("dev_model_usage_limit", 5))  # 每日限制次数
+            self.daily_reset_time = conf.get("daily_reset_time", "00:00")  # 每日刷新时间
+
+            self.user_usage: Dict[str, int] = {}  # 用户使用次数记录
+            self.last_reset_date = datetime.now().date()
 
             if not os.path.exists(self.image_output_dir):
                 os.makedirs(self.image_output_dir)
@@ -61,6 +71,18 @@ class Siliconflow2cow(Plugin):
             logger.error(f"[Siliconflow2cow] 初始化失败，错误：{e}")
             raise e
 
+
+    def reset_daily_usage(self):
+        """每日重置使用次数"""
+        now = datetime.now()
+        reset_hour, reset_minute = map(int, self.daily_reset_time.split(":"))
+        reset_time = now.replace(hour=reset_hour, minute=reset_minute, second=0, microsecond=0)
+
+        if now >= reset_time and self.last_reset_date < now.date():
+            self.user_usage.clear()  # 清空所有用户的使用记录
+            self.last_reset_date = now.date()
+            logger.info(f"[Siliconflow2cow] 已重置用户 dev 模型的使用次数")
+            
     def schedule_next_run(self):
         """安排下一次运行"""
         self.timer = threading.Timer(self.clean_check_interval, self.run_clean_task)
@@ -75,7 +97,12 @@ class Siliconflow2cow(Plugin):
         if e_context["context"].type != ContextType.TEXT:
             return
 
+        # 检查并重置使用次数
+        self.reset_daily_usage()
+
+        user_name = e_context["context"]["receiver"]  # 使用 "receiver" 作为用户名获取字段
         content = e_context["context"].content
+
         if not content.startswith(tuple(self.drawing_prefixes)):
             return
 
@@ -94,6 +121,19 @@ class Siliconflow2cow(Plugin):
                 model_key, image_size, clean_prompt = self.parse_user_input(content)
                 logger.debug(f"[Siliconflow2cow] 解析后的参数: 模型={model_key}, 尺寸={image_size}, 提示词={clean_prompt}")
 
+                # dev模型使用限制
+                if model_key == "dev":
+                    usage_count = self.user_usage.get(user_name, 0)
+                    if usage_count >= self.dev_model_usage_limit:
+                        reply = Reply(ReplyType.TEXT, f"您今天使用 dev 模型的次数已达上限 ({self.dev_model_usage_limit} 次)。")
+                        e_context["reply"] = reply
+                        e_context.action = EventAction.BREAK_PASS
+                        return
+
+                    # 记录用户使用次数
+                    self.user_usage[user_name] = usage_count + 1
+
+                # 生成图片
                 original_image_url = self.extract_image_url(clean_prompt)
                 logger.debug(f"[Siliconflow2cow] 原始提示词中提取的图片URL: {original_image_url}")
 
@@ -122,6 +162,8 @@ class Siliconflow2cow(Plugin):
             e_context["reply"] = reply
             e_context.action = EventAction.BREAK_PASS
 
+
+
     def parse_user_input(self, content: str) -> Tuple[str, str, str]:
         model_key = self.extract_model_key(content)
         image_size = self.extract_image_size(content)
@@ -135,13 +177,13 @@ class Siliconflow2cow(Plugin):
         try:
             logger.debug(f"[Siliconflow2cow] 正在翻译提示词: {prompt}")
             translate_response = requests.post(
-                CHAT_API_URL,
+                self.translate_api_url,  # 使用 TRANSLATE_API_URL 实例变量
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.auth_token}"
                 },
                 json={
-                    "model": CHAT_MODEL,
+                    "model": self.translate_model,  # 使用 TRANSLATE_MODEL 实例变量
                     "messages": [
                         {"role": "system", "content": "Translate the following prompt into English:"},
                         {"role": "user", "content": prompt}
@@ -156,6 +198,7 @@ class Siliconflow2cow(Plugin):
             logger.error(f"[Siliconflow2cow] 提示词翻译失败: {e}")
             return prompt  # 如果翻译失败，返回原始提示词
 
+
     def enhance_prompt(self, prompt: str, model_key: str) -> str:
         """根据模型选择合适的提示词增强策略"""
         # 先翻译提示词
@@ -166,15 +209,15 @@ class Siliconflow2cow(Plugin):
             try:
                 logger.debug(f"[Siliconflow2cow] 模型 {model_key} 使用 ENHANCER_PROMPT_FLUX 进行自然语言增强。")
                 response = requests.post(
-                    CHAT_API_URL,
+                    self.chat_api_url,  # 使用实例变量 self.chat_api_url
                     headers={
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {self.auth_token}"
                     },
                     json={
-                        "model": CHAT_MODEL,
+                        "model": self.chat_model,  # 使用实例变量 self.chat_model
                         "messages": [
-                            {"role": "system", "content": ENHANCER_PROMPT_FLUX},
+                            {"role": "system", "content": self.enhancer_prompt_flux},  # 使用实例变量 self.enhancer_prompt_flux
                             {"role": "user", "content": translated_prompt}
                         ]
                     }
@@ -186,20 +229,20 @@ class Siliconflow2cow(Plugin):
             except Exception as e:
                 logger.error(f"[Siliconflow2cow] 自然语言增强失败: {e}")
                 return translated_prompt  # 如果增强失败，返回翻译后的提示词
-        
+            
         # 使用默认的 ENHANCER_PROMPT 进行提示词增强
         try:
             logger.debug(f"[Siliconflow2cow] 正在使用 ENHANCER_PROMPT 进行提示词增强: {translated_prompt}")
             response = requests.post(
-                CHAT_API_URL,
+                self.chat_api_url,  # 使用实例变量 self.chat_api_url
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.auth_token}"
                 },
                 json={
-                    "model": CHAT_MODEL,
+                    "model": self.chat_model,  # 使用实例变量 self.chat_model
                     "messages": [
-                        {"role": "system", "content": ENHANCER_PROMPT},
+                        {"role": "system", "content": self.enhancer_prompt},  # 使用实例变量 self.enhancer_prompt
                         {"role": "user", "content": translated_prompt}
                     ]
                 }
@@ -212,9 +255,6 @@ class Siliconflow2cow(Plugin):
         except Exception as e:
             logger.error(f"[Siliconflow2cow] 提示词增强失败: {e}")
             return translated_prompt  # 如果增强失败，返回翻译后的提示词
-
-
-
 
 
     def generate_image(self, prompt: str, original_image_url: str, model_key: str, image_size: str) -> str:
@@ -248,13 +288,13 @@ class Siliconflow2cow(Plugin):
             json_body["model"] = "black-forest-labs/FLUX.1-dev"
             json_body.update({
                 "num_inference_steps": 30,
-                "guidance_scale": 7.0
+                "guidance_scale": 3.5
             })
 
         elif model_key == "schnell":
             json_body.update({
                 "num_inference_steps": 30,
-                "guidance_scale": 7.0
+                "guidance_scale": 3.5
             })
         elif model_key == "sd2":
             json_body.update({
@@ -285,7 +325,7 @@ class Siliconflow2cow(Plugin):
         else:
             json_body.update({
                 "num_inference_steps": 50,
-                "guidance_scale": 7.5
+                "guidance_scale": 3.5
             })
 
         logger.debug(f"[Siliconflow2cow] 发送请求体: {json_body}")
@@ -377,13 +417,13 @@ class Siliconflow2cow(Plugin):
             raise Exception(f"API请求失败: {str(e)}")
 
     def extract_model_key(self, prompt: str) -> str:
-        match = re.search(r'-m ?(\S+)', prompt)
-        model_key = match.group(1).strip() if match else "dev"
+        match = re.search(r'--m ?(\S+)', prompt)
+        model_key = match.group(1).strip() if match else self.default_drawing_model  # 使用配置中的 default_drawing_model
         logger.debug(f"[Siliconflow2cow] 提取的模型键: {model_key}")
         return model_key
 
     def extract_image_size(self, prompt: str) -> str:
-        match = re.search(r'---(\d+:\d+)', prompt)
+        match = re.search(r'--ar (\d+:\d+)', prompt)
         if match:
             ratio = match.group(1).strip()
             size = self.RATIO_MAP.get(ratio, "1024x1024")
@@ -393,7 +433,7 @@ class Siliconflow2cow(Plugin):
         return size
 
     def clean_prompt_string(self, prompt: str, model_key: str) -> str:
-        clean_prompt = re.sub(r' -m ?\S+', '', re.sub(r'---\d+:\d+', '', prompt)).strip()
+        clean_prompt = re.sub(r' --m ?\S+', '', re.sub(r'--ar \d+:\d+', '', prompt)).strip()
         logger.debug(f"[Siliconflow2cow] 清理后的提示词: {clean_prompt}")
         return clean_prompt
 
@@ -429,7 +469,7 @@ class Siliconflow2cow(Plugin):
             "sdxlt": "https://api.siliconflow.cn/v1/stabilityai/sdxl-turbo/text-to-image",
             "sdxll": "https://api.siliconflow.cn/v1/ByteDance/SDXL-Lightning/text-to-image"
         }
-        url = URL_MAP.get(model_key, URL_MAP["dev"])
+        url = URL_MAP.get(model_key, URL_MAP["schnell"])
         logger.debug(f"[Siliconflow2cow] 选择的模型URL: {url}")
         return url
 
@@ -510,11 +550,11 @@ class Siliconflow2cow(Plugin):
     def get_help_text(self, **kwargs):
         help_text = "插件使用指南：\n"
         help_text += f"1. 使用 {', '.join(self.drawing_prefixes)} 作为命令前缀\n"
-        help_text += "2. 在提示词后面添加 '-m' 来选择模型，例如：-m sdxl\n"
-        help_text += "3. 使用 '---' 后跟比例来指定图片尺寸，例如：---16:9\n"
+        help_text += "2. 在提示词后面添加 '-m' 来选择模型，例如：--m sdxl\n"
+        help_text += "3. 使用 '---' 后跟比例来指定图片尺寸，例如：--ar 16:9\n"
         help_text += "4. 如果要进行图生图，直接在提示词中包含图片URL\n"
         help_text += f"5. 输入 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
-        help_text += f"示例：{self.drawing_prefixes[0]} 一只可爱的小猫 -m dev ---16:9\n"
+        help_text += f"示例：{self.drawing_prefixes[0]} 一只可爱的小猫 --m dev --ar 16:9\n"
         help_text += "注意：您的提示词将会被AI自动优化以产生更好的结果。\n"
         help_text += "注意：各模型的参数已经过调整以提高图像质量。\n"
         help_text += f"可用的模型：dev,schnell, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
