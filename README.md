@@ -6,7 +6,7 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
 
 ## 主要特性
 
-- 支持多种图像生成模型（flux, sd3, sdxl, sd2, sdt, sdxlt, sdxll）
+- 支持多种图像生成模型（flux, schnell, sd3.5, sd3, sdxl, sd2, sdt, sdxlt, sdxll）
 - 可自定义图像尺寸和比例
 - 支持文生图和图生图功能
 - 自动优化用户输入的提示词
@@ -101,7 +101,9 @@ mistralai/Mistral-7B-Instruct-v0.2 (32K，免费)
 
 ### 支持的模型
 
+- flux: FLUX.1-dev
 - flux: FLUX.1-schnell
+- sd3: stable-diffusion-3-5-large
 - sd3: Stable Diffusion 3 Medium
 - sdxl: Stable Diffusion XL Base 1.0
 - sd2: Stable Diffusion 2.1
