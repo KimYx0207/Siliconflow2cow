@@ -291,20 +291,26 @@ class Siliconflow2cow(Plugin):
                 "guidance_scale": 3.5
             })
 
-        elif model_key == "schnell":
+        elif model_key == "schnell":        
             json_body.update({
-                "num_inference_steps": 30,
+                "num_inference_steps": 20,
                 "guidance_scale": 3.5
             })
         elif model_key == "sd2":
             json_body.update({
-                "num_inference_steps": 40,
+                "num_inference_steps": 25,
                 "guidance_scale": 6.0
+            })
+        elif model_key == "sd35": 
+            json_body["model"] = "stabilityai/stable-diffusion-3-5-large"
+            json_body.update({
+                "num_inference_steps": 30,
+                "guidance_scale": 4.5
             })
         elif model_key == "sd3":
             json_body.update({
-                "num_inference_steps": 45,
-                "guidance_scale": 6.0
+                "num_inference_steps": 30,
+                "guidance_scale": 4.5
             })
         elif model_key == "sdt":
             json_body.update({
@@ -324,9 +330,11 @@ class Siliconflow2cow(Plugin):
             })
         else:
             json_body.update({
-                "num_inference_steps": 50,
+                "num_inference_steps": 25,
                 "guidance_scale": 3.5
             })
+
+
 
         logger.debug(f"[Siliconflow2cow] 发送请求体: {json_body}")
         try:
@@ -366,13 +374,13 @@ class Siliconflow2cow(Plugin):
         
         if model_key == "sdxl":
             json_body.update({
-                "num_inference_steps": 40,
-                "guidance_scale": 7.5
+                "num_inference_steps": 30,
+                "guidance_scale": 7.0
             })
         elif model_key == "sd2":
             json_body.update({
-                "num_inference_steps": 40,
-                "guidance_scale": 8.5
+                "num_inference_steps": 30,
+                "guidance_scale": 7.0
             })
         elif model_key == "sdxll":
             json_body.update({
@@ -387,7 +395,7 @@ class Siliconflow2cow(Plugin):
             })
         else:
             json_body.update({
-                "num_inference_steps": 50,
+                "num_inference_steps": 30,
                 "guidance_scale": 7.5
             })
 
@@ -467,7 +475,8 @@ class Siliconflow2cow(Plugin):
             "sd2": "https://api.siliconflow.cn/v1/stabilityai/stable-diffusion-2-1/text-to-image",
             "sdt": "https://api.siliconflow.cn/v1/stabilityai/sd-turbo/text-to-image",
             "sdxlt": "https://api.siliconflow.cn/v1/stabilityai/sdxl-turbo/text-to-image",
-            "sdxll": "https://api.siliconflow.cn/v1/ByteDance/SDXL-Lightning/text-to-image"
+            "sdxll": "https://api.siliconflow.cn/v1/ByteDance/SDXL-Lightning/text-to-image",
+            "sd35": "https://api.siliconflow.cn/v1/images/generations"
         }
         url = URL_MAP.get(model_key, URL_MAP["schnell"])
         logger.debug(f"[Siliconflow2cow] 选择的模型URL: {url}")
@@ -550,14 +559,14 @@ class Siliconflow2cow(Plugin):
     def get_help_text(self, **kwargs):
         help_text = "插件使用说明\n"
         help_text += f"1. 使用 {', '.join(self.drawing_prefixes)} 作为命令前缀\n"
-        help_text += "2. 在提示词后面添加 '-m' 来选择模型，例如：--m sdxl\n"
-        help_text += "3. 使用 '---' 后跟比例来指定图片尺寸，例如：--ar 16:9\n"
+        help_text += "2. 在提示词后面添加 '--m' 来选择模型，例如：--m sdxl\n"
+        help_text += "3. 使用 '--' 后跟比例来指定图片尺寸，例如：--ar 16:9\n"
         help_text += "4. 如果要进行图生图，直接在提示词中包含图片URL\n"
         help_text += f"5. 输入 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
         help_text += f"示例：{self.drawing_prefixes[0]} 一只可爱的小猫 --m dev --ar 16:9\n\n"
         help_text += "注意：您的提示词将会被AI自动优化以产生更好的结果。\n"
         help_text += "注意：各模型的参数已经过调整以提高图像质量。\n"
-        help_text += f"可用的模型：dev,schnell, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
+        help_text += f"可用的模型：dev,schnell, sd35, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
         help_text += f"可用的尺寸比例：{', '.join(self.RATIO_MAP.keys())}\n"
         help_text += f"图片将每{self.clean_interval}天自动清理一次。\n"
         return help_text
