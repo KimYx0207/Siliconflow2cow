@@ -548,13 +548,13 @@ class Siliconflow2cow(Plugin):
             logger.info("[Siliconflow2cow] 没有需要清理的旧图片")
 
     def get_help_text(self, **kwargs):
-        help_text = "插件使用指南：\n"
+        help_text = "插件使用说明\n"
         help_text += f"1. 使用 {', '.join(self.drawing_prefixes)} 作为命令前缀\n"
         help_text += "2. 在提示词后面添加 '-m' 来选择模型，例如：--m sdxl\n"
         help_text += "3. 使用 '---' 后跟比例来指定图片尺寸，例如：--ar 16:9\n"
         help_text += "4. 如果要进行图生图，直接在提示词中包含图片URL\n"
         help_text += f"5. 输入 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
-        help_text += f"示例：{self.drawing_prefixes[0]} 一只可爱的小猫 --m dev --ar 16:9\n"
+        help_text += f"示例：{self.drawing_prefixes[0]} 一只可爱的小猫 --m dev --ar 16:9\n\n"
         help_text += "注意：您的提示词将会被AI自动优化以产生更好的结果。\n"
         help_text += "注意：各模型的参数已经过调整以提高图像质量。\n"
         help_text += f"可用的模型：dev,schnell, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
