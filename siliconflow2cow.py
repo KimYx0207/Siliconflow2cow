@@ -46,12 +46,12 @@ class Siliconflow2cow(Plugin):
             self.clean_interval = float(conf.get("clean_interval", 3))
             self.clean_check_interval = int(conf.get("clean_check_interval", 3600))
             self.chat_api_url = conf.get("CHAT_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
-            self.chat_model = conf.get("CHAT_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+            self.chat_model = conf.get("CHAT_MODEL")
+            if not self.chat_model:
+                raise Exception("在配置中未找到 CHAT_MODEL，请检查 config.json 文件。")
             self.enhancer_prompt = conf.get("ENHANCER_PROMPT", "")
             self.enhancer_prompt_flux = conf.get("ENHANCER_PROMPT_FLUX", "")
             self.default_drawing_model = conf.get("default_drawing_model", "schnell")
-            self.translate_api_url = conf.get("TRANSLATE_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
-            self.translate_model = conf.get("TRANSLATE_MODEL", "Qwen/Qwen2.5-7B-Instruct")
             self.dev_model_usage_limit = int(conf.get("dev_model_usage_limit", 5))  # 每日限制次数
             self.daily_reset_time = conf.get("daily_reset_time", "00:00")  # 每日刷新时间
 
@@ -171,89 +171,80 @@ class Siliconflow2cow(Plugin):
         return model_key, image_size, clean_prompt
 
 
-    def translate_prompt(self, prompt: str) -> str:
-        """统一的翻译功能，将提示词翻译成英文"""
-        try:
-            logger.debug(f"[Siliconflow2cow] 正在翻译提示词: {prompt}")
-            translate_response = requests.post(
-                self.translate_api_url,  # 使用 TRANSLATE_API_URL 实例变量
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.auth_token}"
-                },
-                json={
-                    "model": self.translate_model,  # 使用 TRANSLATE_MODEL 实例变量
-                    "messages": [
-                        {"role": "system", "content": "Translate the following prompt into English:"},
-                        {"role": "user", "content": prompt}
-                    ]
-                }
-            )
-            translate_response.raise_for_status()
-            translated_prompt = translate_response.json()['choices'][0]['message']['content']
-            logger.debug(f"[Siliconflow2cow] 翻译后的提示词: {translated_prompt}")
-            return translated_prompt
-        except Exception as e:
-            logger.error(f"[Siliconflow2cow] 提示词翻译失败: {e}")
-            return prompt  # 如果翻译失败，返回原始提示词
-
-
     def enhance_prompt(self, prompt: str, model_key: str) -> str:
-        """根据模型选择合适的提示词增强策略"""
-        # 先翻译提示词
-        translated_prompt = self.translate_prompt(prompt)
-        
+        """根据模型选择合适的提示词增强策略，同时进行翻译"""
+        # 将提示词在强化过程中翻译
+        logger.debug(f"[Siliconflow2cow] 使用的模型名称：{self.chat_model}")
+        logger.debug(f"[Siliconflow2cow] 正在处理提示词: {prompt}")
+
+    
         # 根据模型选择使用的增强策略
         if model_key in ["dev", "flux"]:
             try:
-                logger.debug(f"[Siliconflow2cow] 模型 {model_key} 使用 ENHANCER_PROMPT_FLUX 进行自然语言增强。")
+                logger.debug(f"[Siliconflow2cow] 模型 {model_key} 使用 ENHANCER_PROMPT_FLUX 进行提示词增强。")
+    
+                request_data = {
+                    "model": self.chat_model,
+                    "messages": [
+                        {"role": "system", "content": self.enhancer_prompt_flux},
+                        {"role": "user", "content": prompt}
+                    ]
+                }
+                logger.debug(f"[Siliconflow2cow] 提示词增强请求体: {json.dumps(request_data, ensure_ascii=False)}")
+    
                 response = requests.post(
-                    self.chat_api_url,  # 使用实例变量 self.chat_api_url
+                    self.chat_api_url,
                     headers={
-                        "Content-Type": "application/json",
+                        "Content-Type": "application/json; charset=utf-8",
                         "Authorization": f"Bearer {self.auth_token}"
                     },
-                    json={
-                        "model": self.chat_model,  # 使用实例变量 self.chat_model
-                        "messages": [
-                            {"role": "system", "content": self.enhancer_prompt_flux},  # 使用实例变量 self.enhancer_prompt_flux
-                            {"role": "user", "content": translated_prompt}
-                        ]
-                    }
+                    json=request_data
                 )
                 response.raise_for_status()
                 enhanced_prompt = response.json()['choices'][0]['message']['content']
-                logger.debug(f"[Siliconflow2cow] 使用 ENHANCER_PROMPT_FLUX 增强后的提示词: {enhanced_prompt}")
+                logger.debug(f"[Siliconflow2cow] 提示词增强完成: {enhanced_prompt}")
                 return enhanced_prompt
-            except Exception as e:
-                logger.error(f"[Siliconflow2cow] 自然语言增强失败: {e}")
-                return translated_prompt  # 如果增强失败，返回翻译后的提示词
-            
-        # 使用默认的 ENHANCER_PROMPT 进行提示词增强
-        try:
-            logger.debug(f"[Siliconflow2cow] 正在使用 ENHANCER_PROMPT 进行提示词增强: {translated_prompt}")
-            response = requests.post(
-                self.chat_api_url,  # 使用实例变量 self.chat_api_url
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.auth_token}"
-                },
-                json={
-                    "model": self.chat_model,  # 使用实例变量 self.chat_model
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None:
+                    logger.error(f"[Siliconflow2cow] 提示词增强失败，状态码: {e.response.status_code}，响应内容: {e.response.text}")
+                else:
+                    logger.error(f"[Siliconflow2cow] 提示词增强失败: {e}")
+                return prompt  # 如果增强失败，返回原始提示词
+        else:
+            # 使用默认的 ENHANCER_PROMPT 进行提示词增强
+            try:
+                logger.debug(f"[Siliconflow2cow] 正在使用 ENHANCER_PROMPT 进行提示词增强: {prompt}")
+    
+                request_data = {
+                    "model": self.chat_model,
                     "messages": [
-                        {"role": "system", "content": self.enhancer_prompt},  # 使用实例变量 self.enhancer_prompt
-                        {"role": "user", "content": translated_prompt}
+                        {"role": "system", "content": self.enhancer_prompt},
+                        {"role": "user", "content": prompt}
                     ]
                 }
-            )
-            response.raise_for_status()
-            enhanced_prompt = response.json()['choices'][0]['message']['content']
-            logger.debug(f"[Siliconflow2cow] 使用 ENHANCER_PROMPT 增强后的提示词: {enhanced_prompt}")
-            return enhanced_prompt
-            
-        except Exception as e:
-            logger.error(f"[Siliconflow2cow] 提示词增强失败: {e}")
-            return translated_prompt  # 如果增强失败，返回翻译后的提示词
+                logger.debug(f"[Siliconflow2cow] 提示词增强请求体: {json.dumps(request_data, ensure_ascii=False)}")
+    
+                response = requests.post(
+                    self.chat_api_url,
+                    headers={
+                        "Content-Type": "application/json; charset=utf-8",
+                        "Authorization": f"Bearer {self.auth_token}"
+                    },
+                    json=request_data
+                )
+                response.raise_for_status()
+                enhanced_prompt = response.json()['choices'][0]['message']['content']
+                logger.debug(f"[Siliconflow2cow] 提示词增强完成: {enhanced_prompt}")
+                return enhanced_prompt
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None:
+                    logger.error(f"[Siliconflow2cow] 提示词增强失败，状态码: {e.response.status_code}，响应内容: {e.response.text}")
+                else:
+                    logger.error(f"[Siliconflow2cow] 提示词增强失败: {e}")
+                return prompt  # 如果增强失败，返回原始提示词
+
+
+
 
 
     def generate_image(self, prompt: str, original_image_url: str, model_key: str, image_size: str) -> str:
@@ -343,7 +334,10 @@ class Siliconflow2cow(Plugin):
             logger.debug(f"[Siliconflow2cow] API响应: {json_response}")
             return json_response['images'][0]['url']
         except requests.exceptions.RequestException as e:
+            if e.response is not None:
+                logger.error(f"[Siliconflow2cow] API请求失败，响应内容: {e.response.text}")
             logger.error(f"[Siliconflow2cow] API请求失败: {e}")
+
             if hasattr(e, 'response') and e.response is not None:
                 if e.response.status_code == 400:
                     error_message = e.response.json().get('error', {}).get('message', '未知错误')
