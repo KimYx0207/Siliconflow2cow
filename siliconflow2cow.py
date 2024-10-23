@@ -163,10 +163,9 @@ class Siliconflow2cow(Plugin):
             e_context.action = EventAction.BREAK_PASS
 
 
-
     def parse_user_input(self, content: str) -> Tuple[str, str, str]:
         model_key = self.extract_model_key(content)
-        image_size = self.extract_image_size(content)
+        image_size = self.extract_image_size(content, model_key)  # 传入 model_key
         clean_prompt = self.clean_prompt_string(content, model_key)
         logger.debug(f"[Siliconflow2cow] 解析用户输入: 模型={model_key}, 尺寸={image_size}, 清理后的提示词={clean_prompt}")
         return model_key, image_size, clean_prompt
@@ -430,15 +429,43 @@ class Siliconflow2cow(Plugin):
         logger.debug(f"[Siliconflow2cow] 提取的模型键: {model_key}")
         return model_key
 
-    def extract_image_size(self, prompt: str) -> str:
+    def extract_image_size(self, prompt: str, model_key: str) -> str:
+        # 定义支持的尺寸映射关系
+        ratio_map_common = {
+            "1:1": "1024x1024",
+            "9:16": "1152x2048",
+            "16:9": "2048x1152",
+            "3:2": "1536x1024",
+            "2:3": "1024x2048",
+            "4:3": "1536x2048",
+        }
+
+        ratio_map_special = {
+            "1:1": "1024x1024",
+            "9:16": "576x1024",
+            "16:9": "1024x576",
+            "3:2": "768x512",
+            "2:3": "512x1024",
+            "4:3": "768x1024",
+        }
+
+        # 根据模型选择对应的尺寸映射
+        if model_key in ["sd35", "FLUX.1-schnell", "Pro-FLUX.1-schnell", "FLUX.1-dev"]:
+            ratio_map = ratio_map_special
+        else:
+            ratio_map = ratio_map_common
+
         match = re.search(r'--ar (\d+:\d+)', prompt)
         if match:
             ratio = match.group(1).strip()
-            size = self.RATIO_MAP.get(ratio, "1024x1024")
+            # 根据映射选择适当的尺寸
+            size = ratio_map.get(ratio, "1024x1024")  # 默认使用 1024x1024
         else:
             size = "1024x1024"
+
         logger.debug(f"[Siliconflow2cow] 提取的图片尺寸: {size}")
         return size
+
 
     def clean_prompt_string(self, prompt: str, model_key: str) -> str:
         clean_prompt = re.sub(r' --m ?\S+', '', re.sub(r'--ar \d+:\d+', '', prompt)).strip()
