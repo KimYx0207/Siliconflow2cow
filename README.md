@@ -30,7 +30,7 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
 ```json
 {
   "auth_token": "您的 API 认证令牌",
-  "drawing_prefixes": ["绘", "draw"],
+  "drawing_prefixes": ["画", "draw"],
   "image_output_dir": "./plugins/siliconflow2cow/images",
   "clean_interval": 3,
   "clean_check_interval": 3600
@@ -92,7 +92,7 @@ mistralai/Mistral-7B-Instruct-v0.2 (32K，免费)
 
 示例：
 ```
-绘小女孩,情趣内衣,18岁,蜡烛,昏暗 -m flux ---16:9
+绘小女孩,情趣内衣,18岁,蜡烛,昏暗 --m flux --16:9
 ```
 **输入格式错误时，会使用默认模型flux默认尺寸1024x1024请求接口**
 <img width="1076" alt="image" src="https://github.com/user-attachments/assets/e31cc900-37e4-4737-ac6f-320a4558d6c5">
