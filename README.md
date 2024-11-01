@@ -29,11 +29,20 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
 
 ```json
 {
-  "auth_token": "您的 API 认证令牌",
+  "auth_token": "sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
   "drawing_prefixes": ["画", "draw"],
-  "image_output_dir": "./plugins/siliconflow2cow/images",
+  "image_output_dir": "./plugins/Siliconflow2cow/images",
   "clean_interval": 3,
-  "clean_check_interval": 3600
+  "clean_check_interval": 3600,
+  "CHAT_API_URL": "https://api.siliconflow.cn/v1/chat/completions",
+  "CHAT_MODEL": "01-ai/Yi-1.5-9B-Chat-16K",
+  "ENHANCER_PROMPT": "You are a powerful Stable Diffusion prompt assistant. You can accurately translate Chinese to English and expand scenes and detailed descriptions based on simple prompts, generating concise and AI-recognizable painting prompts. Your prompts must output a complete English sentence, and the output result is limited to 100 words or less. It should be detailed and complete, including complex details of what is happening in the image. The text should be limited to one scene. Do not delete important details from the user's input information, especially terms related to graphics, details, lighting, quality, resolution, color profiles, image filters, and artist and character names. Do not output any explanatory content that is unrelated to the image prompt. ",
+  "ENHANCER_PROMPT_FLUX": "You are a powerful Stable Diffusion prompt assistant. You can accurately translate Chinese to English and expand scenes and detailed descriptions based on simple prompts, generating concise and AI-recognizable painting prompts. Your prompts must output a complete English sentence, and the output result is limited to 100 words or less. It should be detailed and complete, including complex details of what is happening in the image. The text should be limited to one scene. Do not delete important details from the user's input information, especially terms related to graphics, details, lighting, quality, resolution, color profiles, image filters, and artist and character names. Do not output any explanatory content that is unrelated to the image prompt. ",
+  "default_drawing_model": "schnell",
+  "dev_model_whitelist": ["user1", "user2"],
+  "dev_model_usage_limit": 10,
+  "daily_reset_time": "00:00",
+  "admin_password": ""
 }
 ```
 
@@ -42,6 +51,13 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
 - `image_output_dir`: 生成图片的保存路径
 - `clean_interval`: 自动清理（默认3天）前的旧图片
 - `clean_check_interval`: 默认每小时检测一次图片是否需要清理（单位为s）
+- `CHAT_API_URL`: API地址
+- `CHAT_MODEL`：模型名称
+- `ENHANCER_PROMPT`:SD使用强化提示词
+- `ENHANCER_PROMPT_FLUX`:FLUX使用强化提示词
+- `default_drawing_model`：默认绘画模型
+- `dev_model_usage_limit`：付费模型Flux.dev每日使用次数限制
+- `daily_reset_time`：Flux.dev次数刷新时间
 
 ## 翻译模型选择
 
