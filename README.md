@@ -29,7 +29,7 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
 
 ```json
 {
-  "auth_token": "sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "auth_token": "sk-XXXXXXXXXXXXXXXXXXXXX",
   "drawing_prefixes": ["画", "draw"],
   "image_output_dir": "./plugins/Siliconflow2cow/images",
   "clean_interval": 3,
@@ -39,11 +39,11 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
   "ENHANCER_PROMPT": "You are a powerful Stable Diffusion prompt assistant. You can accurately translate Chinese to English and expand scenes and detailed descriptions based on simple prompts, generating concise and AI-recognizable painting prompts. Your prompts must output a complete English sentence, and the output result is limited to 100 words or less. It should be detailed and complete, including complex details of what is happening in the image. The text should be limited to one scene. Do not delete important details from the user's input information, especially terms related to graphics, details, lighting, quality, resolution, color profiles, image filters, and artist and character names. Do not output any explanatory content that is unrelated to the image prompt. ",
   "ENHANCER_PROMPT_FLUX": "You are a powerful Stable Diffusion prompt assistant. You can accurately translate Chinese to English and expand scenes and detailed descriptions based on simple prompts, generating concise and AI-recognizable painting prompts. Your prompts must output a complete English sentence, and the output result is limited to 100 words or less. It should be detailed and complete, including complex details of what is happening in the image. The text should be limited to one scene. Do not delete important details from the user's input information, especially terms related to graphics, details, lighting, quality, resolution, color profiles, image filters, and artist and character names. Do not output any explanatory content that is unrelated to the image prompt. ",
   "default_drawing_model": "schnell",
-  "dev_model_whitelist": ["user1", "user2"],
   "dev_model_usage_limit": 10,
   "daily_reset_time": "00:00",
-  "admin_password": "XXXXXXXXXXXXXXXXXXXXXXXX"
+  "admin_password": "XXXXXXXXXXXXXXXXXXXX"
 }
+
 ```
 
 - `auth_token`: 您的API认证令牌
