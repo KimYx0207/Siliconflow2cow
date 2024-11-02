@@ -662,5 +662,5 @@ class Siliconflow2cow(Plugin):
         help_text += f"可用的模型：dev,schnell, sd35, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
         help_text += f"可用的尺寸比例：{', '.join(self.RATIO_MAP.keys())}\n"
         help_text += f"图片将每{self.clean_interval}天自动清理一次。\n"
-        help_text += f"。输入"$sf_admin_password 密码"验证管理员，管理员不受每日次数限制，并可执行 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
+        help_text += f"。输入 $sf_admin_password 密码 验证管理员，管理员不受每日次数限制，并可执行 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
         return help_text
