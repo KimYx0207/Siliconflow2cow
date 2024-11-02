@@ -104,12 +104,12 @@ mistralai/Mistral-7B-Instruct-v0.2 (32K，免费)
 使用以下格式生成图像：
 
 ```
-[前缀] [提示词] -m [模型] ---[宽高比]
+[前缀] [提示词] --m [模型] --ar [宽高比]
 ```
 
 示例：
 ```
-绘小女孩,情趣内衣,18岁,蜡烛,昏暗 --m flux --16:9
+绘小女孩,情趣内衣,18岁,蜡烛,昏暗 --m flux --ar 16:9
 ```
 **输入格式错误时，会使用默认模型flux默认尺寸1024x1024请求接口**
 <img width="1076" alt="image" src="https://github.com/user-attachments/assets/e31cc900-37e4-4737-ac6f-320a4558d6c5">
@@ -120,7 +120,7 @@ mistralai/Mistral-7B-Instruct-v0.2 (32K，免费)
 
 - flux: FLUX.1-dev
 - flux: FLUX.1-schnell
-- sd3: stable-diffusion-3-5-large
+- sd35: stable-diffusion-3-5-large
 - sd3: Stable Diffusion 3 Medium
 - sdxl: Stable Diffusion XL Base 1.0
 - sd2: Stable Diffusion 2.1
