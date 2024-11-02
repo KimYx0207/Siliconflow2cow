@@ -10,6 +10,7 @@ from pathvalidate import sanitize_filename
 from PIL import Image
 from datetime import datetime, timedelta
 import threading
+import pickle
 
 import plugins
 from bridge.context import ContextType
@@ -31,45 +32,62 @@ class Siliconflow2cow(Plugin):
     def __init__(self):
         super().__init__()
         try:
-            conf = super().load_config()
-            if not conf:
+            self.conf = super().load_config()
+            if not self.conf:
                 raise Exception("配置未找到。")
-
-            self.auth_token = conf.get("auth_token")
+    
+            self.auth_token = self.conf.get("auth_token")
             if not self.auth_token:
                 raise Exception("在配置中未找到认证令牌。")
-
     
             # 初始化其他参数
-            self.drawing_prefixes = conf.get("drawing_prefixes", ["绘", "draw"])
-            self.image_output_dir = conf.get("image_output_dir", "./plugins/siliconflow2cow/images")
-            self.clean_interval = float(conf.get("clean_interval", 3))
-            self.clean_check_interval = int(conf.get("clean_check_interval", 3600))
-            self.chat_api_url = conf.get("CHAT_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
-            self.chat_model = conf.get("CHAT_MODEL")
+            self.drawing_prefixes = self.conf.get("drawing_prefixes", ["绘", "draw"])
+            self.image_output_dir = self.conf.get("image_output_dir", "./plugins/siliconflow2cow/images")
+            self.clean_interval = float(self.conf.get("clean_interval", 3))
+            self.clean_check_interval = int(self.conf.get("clean_check_interval", 3600))
+            self.chat_api_url = self.conf.get("CHAT_API_URL", "https://api.siliconflow.cn/v1/chat/completions")
+            self.chat_model = self.conf.get("CHAT_MODEL")
             if not self.chat_model:
                 raise Exception("在配置中未找到 CHAT_MODEL，请检查 config.json 文件。")
-            self.enhancer_prompt = conf.get("ENHANCER_PROMPT", "")
-            self.enhancer_prompt_flux = conf.get("ENHANCER_PROMPT_FLUX", "")
-            self.default_drawing_model = conf.get("default_drawing_model", "schnell")
-            self.dev_model_usage_limit = int(conf.get("dev_model_usage_limit", 5))  # 每日限制次数
-            self.daily_reset_time = conf.get("daily_reset_time", "00:00")  # 每日刷新时间
-
+            self.enhancer_prompt = self.conf.get("ENHANCER_PROMPT", "")
+            self.enhancer_prompt_flux = self.conf.get("ENHANCER_PROMPT_FLUX", "")
+            self.default_drawing_model = self.conf.get("default_drawing_model", "schnell")
+            self.dev_model_usage_limit = int(self.conf.get("dev_model_usage_limit", 5))  # 每日限制次数
+            self.daily_reset_time = self.conf.get("daily_reset_time", "00:00")  # 每日刷新时间
+    
             self.user_usage: Dict[str, int] = {}  # 用户使用次数记录
             self.last_reset_date = datetime.now().date()
-
+            # 加载管理员密码
+            self.admin_password = self.conf.get("admin_password", "")
+            self.admin_users = self.load_admin_users()  # 加载已认证的管理员用户
+    
             if not os.path.exists(self.image_output_dir):
                 os.makedirs(self.image_output_dir)
-
+    
             self.handlers[Event.ON_HANDLE_CONTEXT] = self.on_handle_context
-
+    
             # 启动定时清理任务
             self.schedule_next_run()
-
+    
             logger.info(f"[Siliconflow2cow] 初始化成功，清理间隔设置为 {self.clean_interval} 天，检查间隔为 {self.clean_check_interval} 秒")
         except Exception as e:
             logger.error(f"[Siliconflow2cow] 初始化失败，错误：{e}")
             raise e
+
+            
+    def load_admin_users(self):
+        admin_users_file = os.path.join(self.image_output_dir, "admin_users.pkl")
+        if os.path.exists(admin_users_file):
+            with open(admin_users_file, "rb") as f:
+                return pickle.load(f)
+        else:
+            return set()  # 使用集合来存储用户ID
+    
+    def save_admin_users(self):
+        admin_users_file = os.path.join(self.image_output_dir, "admin_users.pkl")
+        with open(admin_users_file, "wb") as f:
+            pickle.dump(self.admin_users, f)
+
 
 
     def reset_daily_usage(self):
@@ -96,31 +114,83 @@ class Siliconflow2cow(Plugin):
     def on_handle_context(self, e_context: EventContext):
         if e_context["context"].type != ContextType.TEXT:
             return
-
+    
         # 检查并重置使用次数
         self.reset_daily_usage()
-
-        user_name = e_context["context"]["receiver"]  # 使用 "receiver" 作为用户名获取字段
-        content = e_context["context"].content
-
+    
+        user_name = e_context["context"]["receiver"]
+        content = e_context["context"].content.strip()
+    
+        # 检查管理员身份
+        is_admin = user_name in self.admin_users
+    
+        # 处理设置管理员密码的命令（只有管理员可以执行）
+        if content.startswith("$set_sf_admin_password "):
+            if not is_admin:
+                reply = Reply(ReplyType.TEXT, "您没有权限执行此操作，只有管理员可以设置管理员密码。")
+                e_context["reply"] = reply
+                e_context.action = EventAction.BREAK_PASS
+                return
+    
+            args = content[len("$set_sf_admin_password "):].strip()
+            if not args:
+                reply = Reply(ReplyType.TEXT, "请提供新的管理员密码。用法：$set_sf_admin_password 密码")
+            else:
+                new_password = args
+                self.admin_password = new_password
+                # 更新配置文件中的管理员密码
+                conf = super().load_config()
+                conf['admin_password'] = new_password
+                super().save_config(conf)
+                reply = Reply(ReplyType.TEXT, "管理员密码已更新。")
+            e_context["reply"] = reply
+            e_context.action = EventAction.BREAK_PASS
+            return
+    
+        # 处理管理员认证命令
+        if content.startswith("$sf_admin_password "):
+            args = content[len("$sf_admin_password "):].strip()
+            if not args:
+                reply = Reply(ReplyType.TEXT, "请提供管理员密码。用法：$sf_admin_password 密码")
+            else:
+                provided_password = args
+                if provided_password == self.admin_password:
+                    self.admin_users.add(user_name)
+                    self.save_admin_users()
+                    reply = Reply(ReplyType.TEXT, "管理员认证成功，您现在是管理员。")
+                else:
+                    reply = Reply(ReplyType.TEXT, "管理员密码错误，认证失败。")
+            e_context["reply"] = reply
+            e_context.action = EventAction.BREAK_PASS
+            return
+    
+        # 处理 clean_all 命令，只有管理员可以执行
+        if content.lower() == "clean_all":
+            if is_admin:
+                reply = self.clean_all_images()
+            else:
+                reply = Reply(ReplyType.TEXT, "您没有权限执行此操作。")
+            e_context["reply"] = reply
+            e_context.action = EventAction.BREAK_PASS
+            return
+    
         if not content.startswith(tuple(self.drawing_prefixes)):
             return
-
+    
         logger.debug(f"[Siliconflow2cow] 收到消息: {content}")
-
+    
         try:
             # 移除前缀
             for prefix in self.drawing_prefixes:
                 if content.startswith(prefix):
                     content = content[len(prefix):].strip()
                     break
-
-            if content.lower() == "clean_all":
-                reply = self.clean_all_images()
-            else:
-                model_key, image_size, clean_prompt = self.parse_user_input(content)
-                logger.debug(f"[Siliconflow2cow] 解析后的参数: 模型={model_key}, 尺寸={image_size}, 提示词={clean_prompt}")
-
+    
+            model_key, image_size, clean_prompt = self.parse_user_input(content)
+            logger.debug(f"[Siliconflow2cow] 解析后的参数: 模型={model_key}, 尺寸={image_size}, 提示词={clean_prompt}")
+    
+            # 如果不是管理员，检查使用限制
+            if not is_admin:
                 # dev模型使用限制
                 if model_key == "dev":
                     usage_count = self.user_usage.get(user_name, 0)
@@ -129,38 +199,41 @@ class Siliconflow2cow(Plugin):
                         e_context["reply"] = reply
                         e_context.action = EventAction.BREAK_PASS
                         return
-
+    
                     # 记录用户使用次数
                     self.user_usage[user_name] = usage_count + 1
-
-                # 生成图片
-                original_image_url = self.extract_image_url(clean_prompt)
-                logger.debug(f"[Siliconflow2cow] 原始提示词中提取的图片URL: {original_image_url}")
-
-                enhanced_prompt = self.enhance_prompt(clean_prompt, model_key)
-                logger.debug(f"[Siliconflow2cow] 增强后的提示词: {enhanced_prompt}")
-
-                image_url = self.generate_image(enhanced_prompt, original_image_url, model_key, image_size)
-                logger.debug(f"[Siliconflow2cow] 生成的图片URL: {image_url}")
-
-                if image_url:
-                    image_path = self.download_and_save_image(image_url)
-                    logger.debug(f"[Siliconflow2cow] 图片已保存到: {image_path}")
-
-                    with open(image_path, 'rb') as f:
-                        image_storage = BytesIO(f.read())
-                    reply = Reply(ReplyType.IMAGE, image_storage)
-                else:
-                    logger.error("[Siliconflow2cow] 生成图片失败")
-                    reply = Reply(ReplyType.ERROR, "生成图片失败。")
-
+    
+            # 生成图片
+            original_image_url = self.extract_image_url(clean_prompt)
+            logger.debug(f"[Siliconflow2cow] 原始提示词中提取的图片URL: {original_image_url}")
+    
+            enhanced_prompt = self.enhance_prompt(clean_prompt, model_key)
+            logger.debug(f"[Siliconflow2cow] 增强后的提示词: {enhanced_prompt}")
+    
+            image_url = self.generate_image(enhanced_prompt, original_image_url, model_key, image_size)
+            logger.debug(f"[Siliconflow2cow] 生成的图片URL: {image_url}")
+    
+            if image_url:
+                image_path = self.download_and_save_image(image_url)
+                logger.debug(f"[Siliconflow2cow] 图片已保存到: {image_path}")
+    
+                with open(image_path, 'rb') as f:
+                    image_storage = BytesIO(f.read())
+                reply = Reply(ReplyType.IMAGE, image_storage)
+            else:
+                logger.error("[Siliconflow2cow] 生成图片失败")
+                reply = Reply(ReplyType.ERROR, "生成图片失败。")
+    
             e_context["reply"] = reply
             e_context.action = EventAction.BREAK_PASS
+    
         except Exception as e:
             logger.error(f"[Siliconflow2cow] 发生错误: {e}")
             reply = Reply(ReplyType.ERROR, f"发生错误: {str(e)}")
             e_context["reply"] = reply
             e_context.action = EventAction.BREAK_PASS
+
+
 
 
     def parse_user_input(self, content: str) -> Tuple[str, str, str]:
