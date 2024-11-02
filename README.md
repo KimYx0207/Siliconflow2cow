@@ -42,7 +42,7 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
   "dev_model_whitelist": ["user1", "user2"],
   "dev_model_usage_limit": 10,
   "daily_reset_time": "00:00",
-  "admin_password": ""
+  "admin_password": "XXXXXXXXXXXXXXXXXXXXXXXX"
 }
 ```
 
@@ -58,6 +58,7 @@ Siliconflow2cow 是一款强大的 chatgpt-on-wechat 插件，让用户能够通
 - `default_drawing_model`：默认绘画模型
 - `dev_model_usage_limit`：付费模型Flux.dev每日使用次数限制
 - `daily_reset_time`：Flux.dev次数刷新时间
+- `admin_password`：管理员密码，不受每日次数限制，并且可执行清理图片指令
 
 ## 翻译模型选择
 
