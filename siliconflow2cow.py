@@ -618,7 +618,7 @@ class Siliconflow2cow(Plugin):
 
     def clean_all_images(self):
         """清理所有图片"""
-        logger.info("[Siliconflow2cow] 开始清理所有图片")
+        logger.debug("[Siliconflow2cow] 开始清理所有图片")
         initial_count = len([name for name in os.listdir(self.image_output_dir) if os.path.isfile(os.path.join(self.image_output_dir, name))])
 
         for filename in os.listdir(self.image_output_dir):
@@ -629,12 +629,12 @@ class Siliconflow2cow(Plugin):
 
         final_count = len([name for name in os.listdir(self.image_output_dir) if os.path.isfile(os.path.join(self.image_output_dir, name))])
 
-        logger.info("[Siliconflow2cow] 清理所有图片完成")
+        logger.debug("[Siliconflow2cow] 清理所有图片完成")
         return Reply(ReplyType.TEXT, f"清理完成：已删除 {initial_count - final_count} 张图片，当前目录下还有 {final_count} 张图片。")
 
     def clean_old_images(self):
         """清理指定天数前的图片"""
-        logger.info(f"[Siliconflow2cow] 开始检查是否需要清理旧图片，清理间隔：{self.clean_interval}天")
+        logger.debug(f"[Siliconflow2cow] 开始检查是否需要清理旧图片，清理间隔：{self.clean_interval}天")
         now = datetime.now()
         cleaned_count = 0
         for filename in os.listdir(self.image_output_dir):
@@ -646,9 +646,9 @@ class Siliconflow2cow(Plugin):
                     cleaned_count += 1
                     logger.info(f"[Siliconflow2cow] 已删除旧图片: {file_path}")
         if cleaned_count > 0:
-            logger.info(f"[Siliconflow2cow] 清理旧图片完成，共清理 {cleaned_count} 张图片")
+            logger.debug(f"[Siliconflow2cow] 清理旧图片完成，共清理 {cleaned_count} 张图片")
         else:
-            logger.info("[Siliconflow2cow] 没有需要清理的旧图片")
+            logger.debug("[Siliconflow2cow] 没有需要清理的旧图片")
 
     def get_help_text(self, **kwargs):
         help_text = "插件使用说明\n"
@@ -662,5 +662,5 @@ class Siliconflow2cow(Plugin):
         help_text += f"可用的模型：dev,schnell, sd35, sd3, sdxl, sd2, sdt, sdxlt, sdxll\n"
         help_text += f"可用的尺寸比例：{', '.join(self.RATIO_MAP.keys())}\n"
         help_text += f"图片将每{self.clean_interval}天自动清理一次。\n"
-        help_text += f"。输入 $sf_admin_password 密码 验证管理员，管理员不受每日次数限制，并可执行 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
+        help_text += f"输入 $sf_admin_password 密码 验证管理员，管理员不受每日次数限制，并可执行 '{self.drawing_prefixes[0]}clean_all' 来清理所有图片（警告：这将删除所有已生成的图片）\n"
         return help_text
